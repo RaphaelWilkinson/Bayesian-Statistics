@@ -1,0 +1,401 @@
+---
+format: html
+editor: visual
+---
+
+# Les modèles Bayésiens pour évaluer les effets du changement climatique sur le Grand Tétras (*Tetrao tetrix*)
+
+## 1. Exporation des données
+
+### 1.1 - Importation, visualisation et formatage
+
+```{r, message=FALSE, warning=FALSE}
+## Packages 
+library(dplyr)
+library(ggplot2)
+library(R2jags)
+library(tidyverse)
+library(mgcv)       
+library(MuMIn)      
+library(performance)
+library(glmmTMB)
+```
+
+```{r, message=FALSE, warning=FALSE}
+
+## Importation des données
+BirdData <- read.csv("data/tetras.csv", sep = ";")
+
+## Permet d'avoir un aperçu global sur le jeu de données et le format des variables
+glimpse(BirdData)
+
+## Transforme la variable "région" en facteur
+BirdData$region <- factor(BirdData$region)
+levels(BirdData$region)
+
+## Transforme la variable "site" en facteur
+BirdData$site <- factor(BirdData$site)
+levels(BirdData$site)
+
+## Crée une variable région numérique
+BirdData <- BirdData %>%
+  mutate(region_j = as.numeric(factor(region)))
+
+## Crée une variable nombre de jeunes par poule
+BirdData <- BirdData %>%
+  mutate(ChicksPerHen = ifelse(jeunes == 0, 0, poules / jeunes))
+
+```
+
+Le jeu de données comprend 501 observations et 6 variables.
+
+Les données sont structurées autour de quatres régions d’étude parmi lesquelles on compte différents sites d’échantillonnage (n=58), avec des mesures répétées de 1990 à 2007.
+
+Les variables region et site ont été identifiées comme des variables catégorielles et ont été converties en facteurs.
+
+Les autres variables correspondent à des variables numériques : l’année d’observation, l’indice climatique NAO (janvier–mars) ainsi que le nombre de poules et le nombre de jeunes, qui sont des variables de comptage.
+
+### 1.2 - Statistiques résumantes
+
+```{r,message=FALSE, warning=FALSE}
+
+## Durée du suivi
+BirdData %>%
+  summarise(
+    annee_min = min(annee),
+    annee_max = max(annee),
+    duree_suivi = annee_max - annee_min + 1)
+
+## Nombre total de sites
+BirdData %>%
+  summarise(n_sites = n_distinct(site))
+
+## Nombre de sites par région
+BirdData %>%
+  distinct(region, site) %>%
+  count(region, name = "n_sites")
+
+## Nombre moyen de poules et de jeunes par année 
+BirdData %>%
+  group_by(annee) %>%
+  summarise(
+    mean_poules = mean(poules),
+    sd_poules   = sd(poules),
+    mean_jeunes = mean(jeunes),
+    sd_jeunes   = sd(jeunes)
+  ) %>%
+  arrange(annee)
+
+## Statistiques descriptives de l'indice NAO
+BirdData %>%
+  summarise(
+    mean_NAO = mean(NAOdjfm),
+    sd_NAO   = sd(NAOdjfm),
+    min_NAO  = min(NAOdjfm),
+    max_NAO  = max(NAOdjfm))
+
+
+```
+
+Les données couvrent une période de 18 ans (1990–2007).
+
+Le nombre de sites par région varie de 6 dans les Pré-Alpes occidentales à 33 dans les Alpes du Nord, avec 8 sites dans les Alpes du Sud et 11 dans les Alpes internes.
+
+Le nombre moyen de poules et de jeunes est variable suivant les années. Il semblerait que le nombre moyen de poules par an était plus important dans les premières années du suivi, mais que à l'inverse, le nombre moyen de jeunes par an etait plus important vers la fin du suivi.
+
+L’indice NAO varie d’une année à l’autre, allant de -1,46 à 2,10, avec une moyenne légèrement positive, reflétant des conditions climatiques variables au cours de la période étudiée.
+
+### 1.3 - Dynamique temporelle (1990-2007) du nombre de poules et de jeunes de Grand Tétras par région Alpine
+
+```{r,message=FALSE, warning=FALSE}
+regional_totals <- BirdData %>%
+  group_by(region, annee) %>%
+  summarise(
+    poules = sum(poules, na.rm = TRUE),
+    jeunes = sum(jeunes, na.rm = TRUE),
+    .groups = "drop") %>%
+  pivot_longer(cols = c(poules, jeunes), names_to = "classe", values_to = "nombre")
+
+ggplot(regional_totals, aes(x = annee, y = nombre, color = classe)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 1.8) +
+  scale_color_manual(values = c("poules" = "#1f77b4", "jeunes" = "#ff7f0e")) +
+  labs(x = "Année", y = "Abondance", color = "Type")+
+  theme_classic()+
+  facet_wrap(~ region, scales = "free_y")
+
+```
+
+Les graphiques révèlent de fortes disparités régionales dans les effectifs de Grand Tétras, les Alpes du Nord présentant des abondances nettement supérieures à celles des Pré-Alpes occidentales. Dans l’ensemble des régions, les populations montrent une tendance générale à l’augmentation au cours du temps, bien que le début de cette hausse varie selon la région. Une diminution marquée des effectifs est toutefois observée autour de l’année 2005 dans les Alpes du Nord et les Pré-Alpes occidentales.
+
+La dynamique du nombre de jeunes diffère également selon les régions. Dans les Alpes du Sud, les fluctuations du nombre de jeunes suivent étroitement celles du nombre de poules, tandis que dans les Alpes intérieures, la dynamique des jeunes apparaît plus irrégulière. Les données suggèrent par ailleurs une amélioration progressive du succès reproducteur, avec un nombre de jeunes initialement similaire à celui des poules, puis environ deux fois plus élevé dans les années récentes pour la plupart des régions. Le moment de cette amélioration varie spatialement, apparaissant plus précocement dans les Alpes intérieures (vers 1994), puis dans les Pré-Alpes occidentales (vers 1997) et enfin dans les Alpes du Nord (vers 2000).
+
+### 1.4 - Evolution de l'indice cliamtique des Oscillations Atlantique Nord (NAO) de 1990 à 2007
+
+```{r}
+ggplot(BirdData, aes(x = annee, y = NAOdjfm)) +
+  geom_line(color = "black", linewidth = 1) +
+  geom_point(color = "black", size = 2) +
+  labs(x = "Année", y = "Northen Atlantic Oscillations") +
+  theme_classic(base_size = 12)
+
+NAOTendancyModel <- lm(NAOdjfm ~ annee, data = BirdData)
+summary(NAOTendancyModel)
+
+```
+
+L’indice NAO hivernal (décembre–mars) présente une forte variabilité interannuelle sur la période 1990–2007, alternant fréquemment entre phases positives et négatives. Cette alternance traduit une succession d’hivers contrastés en termes de conditions climatiques à l’échelle de l’Atlantique Nord. Il semblerait globalement que malgrè une grande variabilité, le NAO suive une tendance négative. Le modèle linéaire met en évidence cette tendance temporelle négative de l’indice NAO hivernal au cours de la période étudiée (β = −0.069 ± 0.009, t = −7.68, p \< 0.001).
+
+Cette tendance négative de la NAO hivernale suggère une évolution vers des hivers plus froids et potentiellement plus neigeux dans les Alpes au cours de la période étudiée. De telles variations des conditions hivernales peuvent influencer directement la survie hivernale des adultes ainsi que, de manière indirecte, le succès reproducteur ultérieur des populations de Grand Tétras, notamment via leurs effets sur l’état corporel des femelles et la phénologie de reproduction.
+
+### 1.5 - Hypothèses et ojectifs de l'Analyse statistique
+
+BLA BLA BLA
+
+## 2. Ajustement des modèles simplifiés (fréquentistes)
+
+```{r,message=FALSE, warning=FALSE, results = FALSE}
+
+## Préparation des données pour les modèles fréquentists
+# On fait un offset car on modélise le nombre de jeunes en fonction du nombre de poules donc on enlève les lignes avec poules = 0
+BirdData %>%  filter(!is.na(poules), !is.na(jeunes), poules > 0)
+
+## Construction des modèles fréquentists (semblables à l'article de Barnagaud et al., 2011)
+# Modèle nul (seulement site)
+GLMMModel1  <- glmmTMB(jeunes ~ 1 + (1|site), 
+               offset = log(poules), family = poisson(), data = BirdData)
+
+# Régions seules
+GLMMModel2  <- glmmTMB(jeunes ~ region + (1|site), 
+               offset = log(poules), family = poisson(), data = BirdData)
+
+# NAO linéaire seul
+GLMMModel3 <- glmmTMB(jeunes ~ scale(NAOdjfm, center = TRUE, scale = FALSE) + (1|site), 
+               offset = log(poules), family = poisson(), data = BirdData)
+
+# NAO linéaire + effet quadratique
+GLMMModel4 <- glmmTMB(jeunes ~ scale(NAOdjfm, center = TRUE, scale = FALSE) + I(scale(NAOdjfm, center = TRUE, scale = FALSE)^2) + (1|site), 
+               offset = log(poules), family = poisson(), data = BirdData)
+
+# Régions + NAO linéaire
+GLMMModel5 <- glmmTMB(jeunes ~ region + scale(NAOdjfm, center = TRUE, scale = FALSE) + (1|site), 
+                offset = log(poules), family = poisson(), data = BirdData)
+
+# Régions + NAO linéaire et effet quadratique 
+GLMMModel6 <- glmmTMB(jeunes ~ region + scale(NAOdjfm, center = TRUE, scale = FALSE) + I(scale(NAOdjfm, center = TRUE, scale = FALSE)^2) + (1|site), 
+                offset = log(poules), family = poisson(), data = BirdData)
+
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+## Comparaison des modèles fréquentistes par AIC
+Models <- list(m0=GLMMModel1, mR=GLMMModel2, mN1=GLMMModel3, mN2=GLMMModel4, mRN1=GLMMModel5, mRN2=GLMMModel6)
+AICComparison <- MuMIn::model.sel(Models, rank = "AIC")
+BestModel <- rownames(AICComparison)[1]
+BestModel <- Models[[ BestModel ]]
+summary(BestModel)
+```
+
+Le modèle le mieux supporté par l’AIC inclut à la fois les effets de région, de l’indice NAO hivernal et de son terme quadratique, ainsi qu’un effet aléatoire pour le site (σ_site ≈ 0.28). Les résultats indiquent que le succès reproducteur des Grand Tétras augmente de manière significative avec l’augmentation de l’indice NAO (effet linéaire : β = 0.062 ± 0.014, p \< 0.001), mais que cette relation est non linéaire : le terme quadratique négatif (β = −0.065 ± 0.012, p \< 0.001) suggère que les valeurs extrêmes de NAO, très positives ou très négatives, sont associées à un recrutement plus faible, tandis qu’un NAO proche de la moyenne favorise un nombre plus élevé de jeunes.
+
+Concernant les régions, les Alpes du Sud et les Alpes du Nord présentent une tendance à un recrutement légèrement inférieur par rapport à la référence (Alpes intérieures), bien que ces effets soient marginalement significatifs (p ≈ 0.067 et 0.069). Les Pré-Alpes occidentales ne diffèrent pas de la référence. Enfin, l’effet aléatoire du site montre une variabilité modérée entre sites (σ ≈ 0.28), indiquant que des facteurs locaux peuvent également influencer le succès reproducteur
+
+## 3. Ajustement du modèle Bayésien
+
+### 3.1 - Ecriture du modèle, initialisation des paramètres et definition des priors
+
+```{r,message=FALSE, warning=FALSE}
+## Construction du modèle Bayésien 
+## Modèle Nombre de jeunes \~ par poules Région + NAO linéaire + quadratique + (1\| Site) avec un OFFSET sur le nombre de poules
+
+set.seed(1234)
+ModBayPoisson_region_NAO_quad_site <- function() {
+  for(i in 1:n){
+    jeunes[i] ~ dpois(lambda[i])
+    log(lambda[i]) <- 
+      a[site[i]] +                 # effet aléatoire site
+      b_region[region[i]] +        # effet fixe région
+      beta_NAO_lin  * x[i] +        # NAO linéaire
+      beta_NAO_quad * pow(x[i], 2) # NAO quadratique
+      + log(poules[i])}             # OFFSET
+  # Effet aléatoire site
+  for(s in 1:nbsite){
+    a[s] ~ dnorm(mu_site, tau_site)}
+  mu_site ~ dnorm(0, 1)
+  tau_site <- 1 / pow(sd_site, 2)
+  sd_site ~ dunif(0.001, 2)
+  # Effet fixe région
+  for(r in 1:Nregion){
+    b_region[r] ~ dnorm(0, 1)}
+  # Effets NAO
+  beta_NAO_lin  ~ dnorm(0, 1)
+  beta_NAO_quad ~ dnorm(0, 1)}
+
+## Préparation des données
+dataOffset <- list(
+  n       = nrow(BirdData),
+  jeunes  = BirdData$jeunes,
+  poules  = BirdData$poules,
+  x       = as.numeric(scale(BirdData$NAOdjfm)),
+  site    = as.numeric(factor(BirdData$site)),
+  nbsite  = length(unique(BirdData$site)),
+  region  = as.numeric(factor(BirdData$region)),
+  Nregion = length(unique(BirdData$region)))
+
+## Initialisations et paramètres à surveiller
+init1 <- list(
+  mu_site = 0,
+  a = rep(0, dataOffset$nbsite),
+  b_region = rep(0, dataOffset$Nregion),
+  beta_NAO_lin = 0,
+  beta_NAO_quad = 0,
+  sd_site = 1)
+init2 <- list(
+  mu_site = 0.5,
+  a = rep(0.5, dataOffset$nbsite),
+  b_region = rep(0.5, dataOffset$Nregion),
+  beta_NAO_lin = 0.5,
+  beta_NAO_quad = -0.5,
+  sd_site = 2)
+initsOffset <- list(init1, init2)
+paramsOffset <- c( "mu_site", "a", "b_region", "beta_NAO_lin", "beta_NAO_quad", "sd_site")
+
+```
+
+Pour analyser l’effet de l’indice NAO hivernal sur le succès reproducteur des Grand Tétras tout en tenant compte des variations régionales et locales, nous reconstruit le meilleur modèle (issu des analyses fréquentistes de Barnagaud et al., 2011) en bayésien avec une distribution de Poisson. La variable réponse est le nombre de jeunes par site et par année, avec un offset logarithmique sur le nombre de poules, afin de modéliser le recrutement relatif.
+
+Le modèle inclut :
+
+-   un effet fixe pour la région, pour capturer les différences spatiales entre les Alpes du Nord, du Sud et les Pré-Alpes occidentales,
+
+-   un effet linéaire et quadratique de l’indice NAO, afin de tester une relation non linéaire entre conditions climatiques hivernales et succès reproducteur,
+
+-   un effet aléatoire pour le site, pour tenir compte de la variabilité locale non expliquée par les facteurs fixes.
+
+La construction du modèl bayésien a été réalisée dans JAGS. Deux chaînes MCMC ont été initialisées à partir de valeurs différentes afin de vérifier la convergence, et les paramètres surveillés comprenaient les effets fixes (région, NAO linéaire et quadratique) ainsi que les effets aléatoires du site et leur variance. 
+
+Afin d’assurer la stabilité du modèle tout en autorisant une variabilité biologiquement réaliste, nous avons utilisé des priors gaussiens modérément informatifs. Les effets aléatoires de site sont centrés sur zéro et régularisés par une variance bornée, traduisant une variabilité intersite modérée du succès reproducteur. Les effets fixes de région sont également centrés sur zéro avec une variance unitaire, ce qui permet de représenter des différences régionales plausibles sans autoriser des écarts extrêmes. Enfin, les coefficients linéaire et quadratique de l’indice d’oscillation nord-atlantique (NAO) sont assignés à des priors centrés sur zéro et de variance unitaire, reflétant l’hypothèse que l’influence du climat hivernal sur le recrutement est modérée et symétrique autour de l’absence d’effet
+
+### 3.2 - Exécution du modèle Bayésien
+
+```{r,message=FALSE, warning=FALSE, results = FALSE}
+
+## Lancement du modèle Baysésien
+JAGSModel <- jags(
+  data = dataOffset,
+  inits = initsOffset,
+  parameters.to.save = paramsOffset,
+  model.file = ModBayPoisson_region_NAO_quad_site,
+  n.chains = 2,
+  n.iter = 10000,
+  n.burnin = 5000,
+  n.thin = 2)
+
+```
+
+Ici , nous avons exécuté le modèle bayésien en utilisant le package R2jags, avec les données préparées précédemment. Le modèle a été lancé avec deux chaînes MCMC, chacune comportant 10 000 itérations, dont les 5000 premières ont été utilisées comme période de burn-in pour permettre la convergence des chaînes. Les paramètres d’intérêt, incluant les effets fixes et aléatoires, ont été surveillés tout au long de l’exécution du modèle.On a choisi n.thin = 2 pour ne conserver qu’une itération sur deux des chaînes MCMC, ce qui permet de réduire la autocorrélation entre échantillons consécutifs.
+
+### 3.3 - Diagnostic de convergence
+
+```{r,message=FALSE,warning=FALSE,results = FALSE}
+## Vérification de la convergence des paramètres (Rhat)
+print(JAGSModel)
+```
+
+```{r,message=FALSE, warning=FALSE}
+## Traceplots de la convergence des paramètres
+mcmc_mat <- JAGSModel$BUGSoutput$sims.matrix
+mcmc_obj <- as.mcmc(mcmc_mat)
+traceplot(
+  mcmc_obj[, c("mu_site",
+               "sd_site",
+               "beta_NAO_lin",
+               "beta_NAO_quad",
+               "b_region[1]",
+               "b_region[2]",
+               "b_region[3]",
+               "b_region[4]")],
+  ask = FALSE)
+
+```
+
+Les diagnostics de convergence, basés sur les valeurs de Rhat et les traceplots, indiquent que toutes les chaînes MCMC ont convergé de manière satisfaisante pour les différents paramètres. Les valeurs de Rhat sont proches de 1, suggérant une bonne convergence, et les traceplots montrent une exploration adéquate de l’espace des paramètres sans tendance apparente.
+
+## 4. Résultats
+
+### 4.1 - Comparaison des modèles fréquentistes et baysésiens
+
+```{r,message=FALSE,warning=FALSE,results = FALSE}
+print(JAGSModel)
+summary(GLMMModel6)
+```
+
+Les résultats du modèle bayésien (JAGS) et du modèle fréquentiste (GLMM) montrent de fortes similarités dans les estimations des paramètres. Dans les deux modèles, la seule variable ressortant significatives est le coefficient quadratique de la NAO (beta_NAO_quad). Pour cette variable, le GLMM estime -0,065 (SE = 0,012), tandis que le modèle JAGS donne -0,050 (IC 95 % : -0.069 – -0.032). Les deux approches montrent donc un effet négatif significatif et de même ordre de grandeur, confirmant la robustesse de l’influence quadratique de la NAO sur le nombre de jeunes de grand Tétras observés.
+
+De plus, les deux modèles estiment un effet aléatoire site de même ordre de grandeur (GLMM : SD ≈ 0,28 ; JAGS : SD ≈ 0,3, IC 95% : 0,24–0,39), indiquant que la variabilité inter-sites est cohérente et bien capturée par les deux approches.
+
+### 4.2 - Effet de l'indice NAO sur le nombre de jeunes par poule selon les régions
+
+```{r,message=FALSE, warning=FALSE}
+## Récupère les simulations postérieures du modèle JAGS
+JAGSSimulations <- JAGSModel$BUGSoutput$sims.list
+
+## Crée une séquence de valeurs NAO pour les prédictions et une grille combinant NAO et régions
+NAO_seq <- seq(min(dataOffset$x), max(dataOffset$x), length.out = 100)
+pred_grid <- expand.grid(x = NAO_seq, region = 1:dataOffset$Nregion)
+
+## Nombre d'itérations MCMC
+n_iter <- length(JAGSSimulations$beta_NAO_lin)
+
+## Matrice vide pour stocker les prédictions pour chaque combinaison NAO/région et itération
+pred_mat <- matrix(NA, nrow = nrow(pred_grid), ncol = n_iter)
+
+## Boucle pour calculer les prédictions sur toutes les itérations MCMC
+
+for(i in 1:n_iter){
+  for(r in 1:dataOffset$Nregion){
+    idx <- which(pred_grid$region == r)          # lignes correspondant à cette région
+    eta <- JAGSSimulations$mu_site[i] +
+           JAGSSimulations$b_region[i, r] +
+           JAGSSimulations$beta_NAO_lin[i]  * pred_grid$x[idx] +
+           JAGSSimulations$beta_NAO_quad[i] * pred_grid$x[idx]^2
+    pred_mat[idx, i] <- exp(eta)}}
+
+
+## Calcule la moyenne des prédictions sur toutes les itérations et convertit les indices de région en facteurs lisibles
+pred_df <- pred_grid %>%
+  mutate(
+    mean = apply(pred_mat, 1, mean),
+    region = factor(region,
+                    levels = 1:dataOffset$Nregion,       
+                    labels = levels(BirdData$region))   
+  )
+
+## Graphique de l'effet de la NAO sur le nombre de jeunes par poule selon les régions
+ggplot() +
+  geom_line(
+    data = pred_df,
+    aes(x = x, y = mean, colour = region),
+    size = 1.2) +
+  geom_point(
+    data = BirdData,
+    aes(x = NAOdjfm, y = ChicksPerHen),
+    colour = "grey70",
+    alpha = 0.6,
+    size = 1.8) +
+  labs(x = "Northen Atlantic Oscillations", y = "Number of Chicks per Hen", colour = "Region") +
+  theme_classic(base_size = 14) +
+  coord_cartesian(ylim = c(0.3, 2.8)) 
+
+
+```
+
+Le graphique illustre l’effet de l’oscillation nord-atlantique (NAO) sur le nombre de poussins par poule, en tenant compte des différences entre régions. On observe une relation quadratique entre la NAO et le nombre de poussins : le nombre de jeunes tend à augmenter pour des valeurs modérées de NAO, puis diminue pour des valeurs extrêmes, indiquant un optimum intermédiaire. Parmi les régions, la région pré-alpes-occidentales (violet) présente systématiquement le nombre de poussins le plus élevé, suivie de la région alpes_int (rouge), tandis que les régions alpes_nord (vert) et alpes_sud (bleu) affichent des niveaux plus faibles et relativement similaires.
+
+INTERPRETATION des resultats BLA BLA BLA
+
+
+## 5. Discussion
+
+BLA BLA BLA
