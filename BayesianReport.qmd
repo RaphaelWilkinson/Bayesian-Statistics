@@ -3,7 +3,7 @@ format: html
 editor: visual
 ---
 
-# Les modèles Bayésiens pour évaluer les effets du changement climatique sur le Grand Tétras (*Tetrao tetrix*)
+# Les modèles Bayésiens pour évaluer les effets du changement climatique sur le Tétras Lyre (*Tetrao tetrix*)
 
 ## 1. Exporation des données
 
@@ -43,7 +43,7 @@ BirdData <- BirdData %>%
 
 ## Crée une variable nombre de jeunes par poule
 BirdData <- BirdData %>%
-  mutate(ChicksPerHen = ifelse(jeunes == 0, 0, poules / jeunes))
+  mutate(ChicksPerHen = ifelse(jeunes == 0, 0, jeunes / poules))
 
 ```
 
@@ -105,7 +105,7 @@ Le nombre moyen de poules et de jeunes est variable suivant les années. Il semb
 
 L’indice NAO varie d’une année à l’autre, allant de -1,46 à 2,10, avec une moyenne légèrement positive, reflétant des conditions climatiques variables au cours de la période étudiée.
 
-### 1.3 - Dynamique temporelle (1990-2007) du nombre de poules et de jeunes de Grand Tétras par région Alpine
+### 1.3 - Dynamique temporelle (1990-2007) du nombre de poules et de jeunes de Tétras Lyre par région Alpine
 
 ```{r,message=FALSE, warning=FALSE}
 regional_totals <- BirdData %>%
@@ -126,11 +126,53 @@ ggplot(regional_totals, aes(x = annee, y = nombre, color = classe)) +
 
 ```
 
-Les graphiques révèlent de fortes disparités régionales dans les effectifs de Grand Tétras, les Alpes du Nord présentant des abondances nettement supérieures à celles des Pré-Alpes occidentales. Dans l’ensemble des régions, les populations montrent une tendance générale à l’augmentation au cours du temps, bien que le début de cette hausse varie selon la région. Une diminution marquée des effectifs est toutefois observée autour de l’année 2005 dans les Alpes du Nord et les Pré-Alpes occidentales.
+Les graphiques révèlent de fortes disparités régionales dans les effectifs de Tétras Lyre, les Alpes du Nord présentant des abondances nettement supérieures à celles des Pré-Alpes occidentales. Dans l’ensemble des régions, les populations montrent une tendance générale à l’augmentation au cours du temps, bien que le début de cette hausse varie selon la région. Une diminution marquée des effectifs est toutefois observée autour de l’année 2005 dans les Alpes du Nord et les Pré-Alpes occidentales.
 
 La dynamique du nombre de jeunes diffère également selon les régions. Dans les Alpes du Sud, les fluctuations du nombre de jeunes suivent étroitement celles du nombre de poules, tandis que dans les Alpes intérieures, la dynamique des jeunes apparaît plus irrégulière. Les données suggèrent par ailleurs une amélioration progressive du succès reproducteur, avec un nombre de jeunes initialement similaire à celui des poules, puis environ deux fois plus élevé dans les années récentes pour la plupart des régions. Le moment de cette amélioration varie spatialement, apparaissant plus précocement dans les Alpes intérieures (vers 1994), puis dans les Pré-Alpes occidentales (vers 1997) et enfin dans les Alpes du Nord (vers 2000).
 
-### 1.4 - Evolution de l'indice cliamtique des Oscillations Atlantique Nord (NAO) de 1990 à 2007
+### 1.4 - Evolution du nombre de jeunes par poule de Tétras Lyre de 1990 à 2007
+
+```{r,message=FALSE, warning=FALSE}
+TotalAnnuel <- BirdData %>%
+  group_by(annee) %>%
+  summarise(
+    ChicksPerHen = mean(ChicksPerHen, na.rm = TRUE),
+  ) %>%
+  pivot_longer(cols = c(ChicksPerHen), names_to = "classe", values_to = "ratioJ/P")
+
+# 2) Graphique lignes
+ggplot(TotalAnnuel, aes(x = annee, y = `ratioJ/P`, color = classe)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  labs(    x = "Année",
+    y = "Nombre de jeunes par poules") +
+  theme_minimal(base_size = 12)
+```
+
+Ce graphique montre que le nombre de jeunes par poule reste globalement stable autour de 1,4 à 1,8, malgré quelques fluctuations marquées au début des années 1990. Après cette période plus variable, la productivité se stabilise progressivement, avec des variations plus modérées d’une année à l’autre, traduisant une reproduction globalement régulière à l’échelle de l’ensemble des régions.
+
+### 1.5 - Evolution du nombre de jeunes par poule de Tétras Lyre par région de 1990 à 2007
+
+```{r,message=FALSE, warning=FALSE}
+TotalRegional <- BirdData %>%
+  group_by(region, annee) %>%
+  summarise(
+ ChicksPerHen = mean(ChicksPerHen, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(cols = c(ChicksPerHen), names_to = "classe", values_to = "ratioJ/P")
+
+ggplot(TotalRegional, aes(x = annee, y = `ratioJ/P`, color = classe)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 1.8) +
+  labs(    x = "Année",
+    y = "Nombre"  ) +
+  facet_wrap(~ region, scales = "free_y")
+```
+
+Ce graphique montre que la productivité du Grand Tétras varie nettement selon les régions. les Alpes internes et les Préalpes occidentales présentent globalement des niveaux plus élevés et relativement stables malgré des fluctuations annuelles, tandis que les Alpes du Nord et les Alpes du Sud affichent une variabilité plus marquée, avec des creux prononcés au début des années 1990. Dans l'ensemble, chaque massif suit une dynamique propre, soulignant le poids des conditions locales (climat, enneigement, habitat) dans la réussite reproductrice.
+
+### 1.6 - Evolution de l'indice cliamtique des Oscillations Atlantique Nord (NAO) de 1990 à 2007
 
 ```{r}
 ggplot(BirdData, aes(x = annee, y = NAOdjfm)) +
@@ -146,11 +188,13 @@ summary(NAOTendancyModel)
 
 L’indice NAO hivernal (décembre–mars) présente une forte variabilité interannuelle sur la période 1990–2007, alternant fréquemment entre phases positives et négatives. Cette alternance traduit une succession d’hivers contrastés en termes de conditions climatiques à l’échelle de l’Atlantique Nord. Il semblerait globalement que malgrè une grande variabilité, le NAO suive une tendance négative. Le modèle linéaire met en évidence cette tendance temporelle négative de l’indice NAO hivernal au cours de la période étudiée (β = −0.069 ± 0.009, t = −7.68, p \< 0.001).
 
-Cette tendance négative de la NAO hivernale suggère une évolution vers des hivers plus froids et potentiellement plus neigeux dans les Alpes au cours de la période étudiée. De telles variations des conditions hivernales peuvent influencer directement la survie hivernale des adultes ainsi que, de manière indirecte, le succès reproducteur ultérieur des populations de Grand Tétras, notamment via leurs effets sur l’état corporel des femelles et la phénologie de reproduction.
+Cette tendance négative de la NAO hivernale suggère une évolution vers des hivers plus froids et potentiellement plus neigeux dans les Alpes au cours de la période étudiée. De telles variations des conditions hivernales peuvent influencer directement la survie hivernale des adultes ainsi que, de manière indirecte, le succès reproducteur ultérieur des populations de Tétras Lyre, notamment via leurs effets sur l’état corporel des femelles et la phénologie de reproduction.
 
-### 1.5 - Hypothèses et ojectifs de l'Analyse statistique
+### 1.7 - Hypothèses et ojectifs de l'Analyse statistique
 
-BLA BLA BLA
+Dans cette étude, notre objectif est d’évaluer dans quelle mesure les populations alpines de Tétras lyre, une espèce boréo-alpine localisée en limite sud de son aire de répartition, sont affectées par les variations climatiques récentes et le réchauffement global. Nous avons formulé l’hypothèse que le succès reproducteur, trait démographique particulièrement sensible aux fluctuations climatiques chez de nombreuses espèces d’oiseaux, serait influencé à la fois par les conditions hivernales, déterminantes pour l’état physiologique et les réserves énergétiques des femelles avant la ponte, et par les conditions de début de printemps, qui conditionnent la qualité des ressources alimentaires disponibles avant l’élevage des jeunes.
+
+Plus précisément, nous nous attendions à ce que la variabilité interannuelle de la NAO (North Atlantic Oscillation), utilisée comme indicateur synthétique du climat, affecte la productivité des populations, et que d’éventuelles tendances à long terme de la NAO liées au changement climatique se traduisent par une modification du succès reproducteur à l’échelle des Alpes. Pour tester ces hypothèses, nous avons analysé des séries de recensements annuels de Tétras lyre entre 1990 et 2007, en recherchant à la fois des tendances temporelles globales et des relations entre indices reproducteurs et NAO seulement d’hiver
 
 ## 2. Ajustement des modèles simplifiés (fréquentistes)
 
@@ -187,7 +231,6 @@ GLMMModel6 <- glmmTMB(jeunes ~ region + scale(NAOdjfm, center = TRUE, scale = FA
 
 ```
 
-
 ```{r, message=FALSE, warning=FALSE}
 ## Comparaison des modèles fréquentistes par AIC
 Models <- list(m0=GLMMModel1, mR=GLMMModel2, mN1=GLMMModel3, mN2=GLMMModel4, mRN1=GLMMModel5, mRN2=GLMMModel6)
@@ -197,9 +240,13 @@ BestModel <- Models[[ BestModel ]]
 summary(BestModel)
 ```
 
-Le modèle le mieux supporté par l’AIC inclut à la fois les effets de région, de l’indice NAO hivernal et de son terme quadratique, ainsi qu’un effet aléatoire pour le site (σ_site ≈ 0.28). Les résultats indiquent que le succès reproducteur des Grand Tétras augmente de manière significative avec l’augmentation de l’indice NAO (effet linéaire : β = 0.062 ± 0.014, p \< 0.001), mais que cette relation est non linéaire : le terme quadratique négatif (β = −0.065 ± 0.012, p \< 0.001) suggère que les valeurs extrêmes de NAO, très positives ou très négatives, sont associées à un recrutement plus faible, tandis qu’un NAO proche de la moyenne favorise un nombre plus élevé de jeunes.
+L’analyse par sélection AIC (modèles comparés: m0, mR, mN1, mN2, mRN1, mRN2) montre que le modèle mRN2 (régions + NAO + NAO² + (1\|site)) est le meilleur (AIC=4028.3), devant le modèle climat seul quadratique mN2 (AIC=4029.8), ce qui indique que la NAO (linéaire + quadratique) explique l’essentiel de la variation, et que les régions ajoutent un gain modeste mais réel.
+
+Ce meilleur modèle inclut à la fois les effets de région, de l’indice NAO hivernal et de son terme quadratique, ainsi qu’un effet aléatoire pour le site (σ_site ≈ 0.28). Les résultats indiquent que le succès reproducteur des Tétras Lyre augmente de manière significative avec l’augmentation de l’indice NAO (effet linéaire : β = 0.062 ± 0.014, p \< 0.001), mais que cette relation est non linéaire : le terme quadratique négatif (β = −0.065 ± 0.012, p \< 0.001) suggère que les valeurs extrêmes de NAO, très positives ou très négatives, sont associées à un recrutement plus faible, tandis qu’un NAO proche de la moyenne favorise un nombre plus élevé de jeunes.
 
 Concernant les régions, les Alpes du Sud et les Alpes du Nord présentent une tendance à un recrutement légèrement inférieur par rapport à la référence (Alpes intérieures), bien que ces effets soient marginalement significatifs (p ≈ 0.067 et 0.069). Les Pré-Alpes occidentales ne diffèrent pas de la référence. Enfin, l’effet aléatoire du site montre une variabilité modérée entre sites (σ ≈ 0.28), indiquant que des facteurs locaux peuvent également influencer le succès reproducteur
+
+Autrement dit, ce premier modèle simple, hiérarchique et adapté à des données de comptage hétérogènes répond directement à la question écologique centrale: comment la NAO hivernale et les différences régionales influencent-elles le taux de reproduction (jeunes par poule) du Grand Tétras?
 
 ## 3. Ajustement du modèle Bayésien
 
@@ -263,7 +310,7 @@ paramsOffset <- c( "mu_site", "a", "b_region", "beta_NAO_lin", "beta_NAO_quad", 
 
 ```
 
-Pour analyser l’effet de l’indice NAO hivernal sur le succès reproducteur des Grand Tétras tout en tenant compte des variations régionales et locales, nous reconstruit le meilleur modèle (issu des analyses fréquentistes de Barnagaud et al., 2011) en bayésien avec une distribution de Poisson. La variable réponse est le nombre de jeunes par site et par année, avec un offset logarithmique sur le nombre de poules, afin de modéliser le recrutement relatif.
+Pour analyser l’effet de l’indice NAO hivernal sur le succès reproducteur des Tétras Lyre tout en tenant compte des variations régionales et locales, nous reconstruit le meilleur modèle (issu des analyses fréquentistes de Barnagaud et al., 2011) en bayésien avec une distribution de Poisson. La variable réponse est le nombre de jeunes par site et par année, avec un offset logarithmique sur le nombre de poules, afin de modéliser le recrutement relatif.
 
 Le modèle inclut :
 
@@ -273,7 +320,7 @@ Le modèle inclut :
 
 -   un effet aléatoire pour le site, pour tenir compte de la variabilité locale non expliquée par les facteurs fixes.
 
-La construction du modèl bayésien a été réalisée dans JAGS. Deux chaînes MCMC ont été initialisées à partir de valeurs différentes afin de vérifier la convergence, et les paramètres surveillés comprenaient les effets fixes (région, NAO linéaire et quadratique) ainsi que les effets aléatoires du site et leur variance. 
+La construction du modèl bayésien a été réalisée dans JAGS. Deux chaînes MCMC ont été initialisées à partir de valeurs différentes afin de vérifier la convergence, et les paramètres surveillés comprenaient les effets fixes (région, NAO linéaire et quadratique) ainsi que les effets aléatoires du site et leur variance.
 
 Afin d’assurer la stabilité du modèle tout en autorisant une variabilité biologiquement réaliste, nous avons utilisé des priors gaussiens modérément informatifs. Les effets aléatoires de site sont centrés sur zéro et régularisés par une variance bornée, traduisant une variabilité intersite modérée du succès reproducteur. Les effets fixes de région sont également centrés sur zéro avec une variance unitaire, ce qui permet de représenter des différences régionales plausibles sans autoriser des écarts extrêmes. Enfin, les coefficients linéaire et quadratique de l’indice d’oscillation nord-atlantique (NAO) sont assignés à des priors centrés sur zéro et de variance unitaire, reflétant l’hypothèse que l’influence du climat hivernal sur le recrutement est modérée et symétrique autour de l’absence d’effet
 
@@ -331,7 +378,7 @@ print(JAGSModel)
 summary(GLMMModel6)
 ```
 
-Les résultats du modèle bayésien (JAGS) et du modèle fréquentiste (GLMM) montrent de fortes similarités dans les estimations des paramètres. Dans les deux modèles, la seule variable ressortant significatives est le coefficient quadratique de la NAO (beta_NAO_quad). Pour cette variable, le GLMM estime -0,065 (SE = 0,012), tandis que le modèle JAGS donne -0,050 (IC 95 % : -0.069 – -0.032). Les deux approches montrent donc un effet négatif significatif et de même ordre de grandeur, confirmant la robustesse de l’influence quadratique de la NAO sur le nombre de jeunes de grand Tétras observés.
+Les résultats du modèle bayésien (JAGS) et du modèle fréquentiste (GLMM) montrent de fortes similarités dans les estimations des paramètres. Dans les deux modèles, la seule variable ressortant significatives est le coefficient quadratique de la NAO (beta_NAO_quad). Pour cette variable, le GLMM estime -0,065 (SE = 0,012), tandis que le modèle JAGS donne -0,050 (IC 95 % : -0.069 – -0.032). Les deux approches montrent donc un effet négatif significatif et de même ordre de grandeur, confirmant la robustesse de l’influence quadratique de la NAO sur le nombre de jeunes de Tétras Lyre observés.
 
 De plus, les deux modèles estiment un effet aléatoire site de même ordre de grandeur (GLMM : SD ≈ 0,28 ; JAGS : SD ≈ 0,3, IC 95% : 0,24–0,39), indiquant que la variabilité inter-sites est cohérente et bien capturée par les deux approches.
 
@@ -393,9 +440,12 @@ ggplot() +
 
 Le graphique illustre l’effet de l’oscillation nord-atlantique (NAO) sur le nombre de poussins par poule, en tenant compte des différences entre régions. On observe une relation quadratique entre la NAO et le nombre de poussins : le nombre de jeunes tend à augmenter pour des valeurs modérées de NAO, puis diminue pour des valeurs extrêmes, indiquant un optimum intermédiaire. Parmi les régions, la région pré-alpes-occidentales (violet) présente systématiquement le nombre de poussins le plus élevé, suivie de la région alpes_int (rouge), tandis que les régions alpes_nord (vert) et alpes_sud (bleu) affichent des niveaux plus faibles et relativement similaires.
 
-INTERPRETATION des resultats BLA BLA BLA
-
+Cela signifie que les hivers très froids et humides réduisent la reproduction, probablement parce que les femelles doivent mobiliser leur énergie pour survivre plutôt que pour se reproduire. De même, les hivers plus chauds et secs que la normale limitent également le succès reproducteur, probablement en réduisant la protection contre le froid ou la prédation et en diminuant la disponibilité et la qualité des ressources végétales. Les variations régionales montrent que certaines zones, comme les pré-alpes-occidentales, présentent systématiquement un nombre de poussins plus élevé, tandis que d’autres régions affichent des niveaux plus faibles et similaires
 
 ## 5. Discussion
 
-BLA BLA BLA
+Nos analyses bayésiennes mettent en évidence une relation non linéaire entre la NAO hivernale et le succès reproducteur du Tétras lyre, caractérisée par un effet linéaire positif et un effet quadratique négatif. Cette forme concave, qui indique une productivité maximale pour des valeurs intermédiaires de la NAO, est parfaitement cohérente avec les résultats de Barnagaud et al. (2011), qui décrivent également un optimum autour de valeurs positives modérées du NAO d’hiver. Dans notre modèle, l’optimum estimé se situe autour de NAO ≈ 0,5, très proche de l’optimum rapporté dans l’étude originale (≈ 0,4). Cette convergence indique que, malgré les approches statistiques différentes, la dynamique biologique décrite demeure robuste : les hivers modérément doux et secs favorisent davantage la reproduction que les hivers très négatifs ou très positifs, qui s’accompagnent d’une baisse de productivité. Les effets régionaux, également présents dans notre meilleur modèle, corroborent ceux observés par Barnagaud et al. (2011), soulignant l’importance des contrastes bioclimatiques alpins dans la variabilité spatiale du succès reproducteur.
+
+Cependant, contrairement à l’étude de référence, les intervalles de crédibilité de nos coefficients incluent légèrement zéro, suggérant une incertitude un peu plus élevée autour des estimations. Ceci peut s’expliquer par plusieurs facteurs : (i) l’utilisation d’un modèle bayésien normal sur une variable dérivée (chicks per hen), alors que Barnagaud et al. utilisaient des GLMM Poisson avec offset, plus adaptés à des données de comptage ; (ii) une possible colinéarité accrue entre les termes linéaire et quadratique lorsque la NAO n’est pas centrée ; et (iii) des différences éventuelles d’étendue spatiale ou temporelle entre nos données et celles couvertes dans leur étude. Malgré cela, les motifs fonctionnels identifiés – absence de tendance temporelle marquée, importance des effets spatiaux, parabole concave de la NAO d’hiver – restent remarquablement similaires. Ces résultats confirment la conclusion de l’étude selon laquelle les populations alpines de Tétras lyre semblent capables de suivre les tendances climatiques récentes, tout en étant potentiellement vulnérables à une augmentation de la fréquence des années extrêmes.
+
+Dans l’ensemble, nos analyses confortent les interprétations de Barnagaud et al. : le Tétras lyre optimise sa reproduction sous des conditions hivernales correspondant à des valeurs moyennes à modérément positives du NAO, ce qui reflète une capacité d’ajustement aux conditions climatiques des dernières décennies. Cette cohérence entre deux approches méthodologiques distinctes renforce la confiance dans le rôle déterminant de la NAO hivernale comme indicateur synthétique des influences climatiques sur le succès reproducteur de cette espèce alpine.
